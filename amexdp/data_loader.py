@@ -20,9 +20,13 @@ class DataLoader:
         self.label_path = os.path.join(data_dir, label_file) 
         self.n_batch = len(os.listdir(self.train_path))
         
-        self.sample_batches = None
-        self.data = None
         self.labels = None
+        self.sample_batches = None
+        self.batch_data = None
+        self.batch_labels = None
+           
+    def load_labels(self):
+        self.labels = pd.read_csv(self.label_path)
     
     def load_batches(self, n_samples: int):
         
@@ -33,13 +37,27 @@ class DataLoader:
         
         pq_filter = ("batch", "in", list(map(str, batches)))
         pq_con = pq.ParquetDataset(self.train_path, filters=[pq_filter])
-        self.data = pq_con.read().to_pandas().drop("batch", axis=1)
+        self.batch_data = pq_con.read().to_pandas().drop("batch", axis=1)
         
-        customers = self.data.index\
+        customers = self.batch_data.index\
             .get_level_values("customer_ID").unique().tolist()
-        targets = pd.read_csv(self.label_path)
-        self.labels = targets[targets["customer_ID"].isin(customers)]\
-            .copy().set_index("customer_ID")      
+        
+        if self.labels is None:
+            self.load_labels()
+        
+        self.batch_labels = self.labels[self.labels["customer_ID"]\
+            .isin(customers)].copy().set_index("customer_ID")
+            
+    def load_column(self, 
+                    col_name: str, 
+                    index_cols: list = None):   
+        
+        if index_cols is None:
+            index_cols = ["customer_ID", "S_2"]   
+            
+        pq_con = pq.ParquetDataset(self.train_path)
+        return pq_con.read(columns=index_cols+[col_name])\
+            .to_pandas().drop("batch", axis=1).reset_index()
         
 if __name__ == "__main__":
     
