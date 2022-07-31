@@ -3,10 +3,14 @@
 # Data Loader (*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-
 # +-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+
 
+
 import os
+from importlib_metadata import metadata
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
+import matplotlib.pyplot as plt
+
 
 def init_metadata():
     
@@ -26,6 +30,19 @@ def init_metadata():
     
     return metadata
 
+
+def aggregator(
+    df: pd.DataFrame,
+    agg_spec: str or list or dict,
+    agg_cols: str or list = None,
+    group_cols: str or list = "customer_ID"
+):
+    if agg_cols is None:
+        return df.groupby(group_cols).agg(agg_spec)
+    else:
+        return df.groupby(group_cols)[agg_cols].agg(agg_spec)
+
+
 class DataLoader:
 
     def __init__(self, 
@@ -40,6 +57,8 @@ class DataLoader:
         self.metadata = self.gen_metadata()
         
         self.labels = None
+        self.col_name = None
+        self.col_data = None
         self.sample_batches = None
         self.batch_data = None
         self.batch_labels = None
@@ -87,8 +106,55 @@ class DataLoader:
             index_cols = self.metadata["keys"]
             
         pq_con = pq.ParquetDataset(self.train_path)
-        return pq_con.read(columns=index_cols+[col_name])\
+        self.col_name = col_name
+        self.col_data = pq_con.read(columns=index_cols+[col_name])\
             .to_pandas().drop("batch", axis=1).reset_index()
+       
+    def continous_profile(self,
+                          agg_list: list,
+                          hist_q: tuple = (0.005, 0.995)):
+        
+        col = self.col_name
+        col_na = f"{col}_NA"
+        df = self.col_data.copy()
+        
+        df.loc[:, col_na] = df[col].isna()
+        agg_df = aggregator(df, agg_spec={col: agg_list, col_na: "mean"})
+        agg_df = self.labels.join(agg_df, on="customer_ID")
+        
+        return agg_df
+        
+    def categorical_profile(self,
+                            agg_list: list):
+        
+        col = self.col_name
+        df = self.col_data.copy()
+        
+        df.loc[:, col] = df[col].astype("category")
+        agg_df = aggregator(df, agg_spec=agg_list, agg_cols=col)
+        agg_df = self.labels.join(agg_df, on="customer_ID")
+        
+        return agg_df
+            
+    def profile_column(self,
+                       agg_list: list = None,
+                       hist_q: tuple = (0.005, 0.995)):
+        
+        if self.col_data is None:
+            raise Exception("Run load_column() method first!")
+        
+        if self.labels is None:
+            self.load_labels()
+        
+        if self.col_name in self.metadata["cats"]:
+            if agg_list is None:
+                agg_list = ["nunique", "first", "last"]
+            return self.categorical_profile(agg_list)
+        else:
+            if agg_list is None:
+                agg_list = ["mean", "min", "max", "last"]
+            return self.continous_profile(agg_list, hist_q)    
+            
         
 if __name__ == "__main__":
     
