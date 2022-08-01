@@ -43,6 +43,55 @@ def aggregator(
         return df.groupby(group_cols)[agg_cols].agg(agg_spec)
 
 
+def bar_counter(series: pd.Series,
+                figsize: tuple = (12, 4)):
+    
+    name = series.name
+    counts = series.value_counts().sort_index()
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    counts.plot(kind="barh", ax=ax)
+    for i, n in enumerate(counts):
+        ax.text(n, i, str(n), verticalalignment="center")
+    ax.set_xlim([0, counts.max()*1.1])
+    if name is not None:
+        ax.set_ylabel(name)
+    plt.show()
+    
+    
+def signal_preview(df: pd.DataFrame,
+                   cols: list,
+                   continuous: bool,
+                   n_cuts: int = None,
+                   cut_type: str = "quantile", # "range" 
+                   plot_dims: tuple or str = "auto",
+                   width: int or float = 12,
+                   row_height: int or float = 4):
+    
+    if plot_dims == "auto":
+        if len(cols) <= 3:
+            plot_dims = (1, len(cols))
+        else:
+            plot_dims = (int(np.ceil(len(cols)/2)), 2)
+    
+    r, c = plot_dims      
+    fig, axes = plt.subplots(r, c, figsize=(width, row_height*r))
+    
+    for a, ax in zip(cols, axes.flatten()[:len(cols)]):
+        
+        if continuous:
+            if n_cuts is None:
+                n_cuts = 7
+            if cut_type == "quantile":
+                a = pd.cut(df[a].round(4), bins=n_cuts)
+            else:
+                a = pd.qcut(df[a].round(4), q=n_cuts)
+        
+        df.groupby(a)["target"].mean().plot(kind="bar", ax=ax)
+        
+    plt.show()
+        
+
+
 class DataLoader:
 
     def __init__(self, 
@@ -62,7 +111,14 @@ class DataLoader:
         self.sample_batches = None
         self.batch_data = None
         self.batch_labels = None
-    
+        
+        self.active_profiler = False
+        self.default_agg = None
+        self.hist_q = None
+        self.fig_width = None
+        self.fig_height = None
+        
+        
     def gen_metadata(self):
         metadata = init_metadata()
         pq_con = pq.ParquetDataset(self.train_path)
@@ -109,10 +165,24 @@ class DataLoader:
         self.col_name = col_name
         self.col_data = pq_con.read(columns=index_cols+[col_name])\
             .to_pandas().drop("batch", axis=1).reset_index()
-       
-    def continous_profile(self,
-                          agg_list: list,
-                          hist_q: tuple = (0.005, 0.995)):
+    
+    def init_profiler(self,
+                      default_agg: dict = None,
+                      hist_q: tuple = (0.005, 0.995),
+                      figure_dims: tuple = (12, 3)):
+        
+        if default_agg is None:
+            default_agg = {
+                "continous": ["mean", "min", "max", "last"],
+                "categorical": ["nunique", "first", "last"]
+            }
+            
+        self.active_profiler = True
+        self.default_agg = default_agg
+        self.hist_q = hist_q
+        self.fig_width, self.fig_height = figure_dims
+    
+    def continous_profile(self, agg_list: list):
         
         col = self.col_name
         col_na = f"{col}_NA"
@@ -124,8 +194,7 @@ class DataLoader:
         
         return agg_df
         
-    def categorical_profile(self,
-                            agg_list: list):
+    def categorical_profile(self, agg_list: list):
         
         col = self.col_name
         df = self.col_data.copy()
@@ -134,11 +203,16 @@ class DataLoader:
         agg_df = aggregator(df, agg_spec=agg_list, agg_cols=col)
         agg_df = self.labels.join(agg_df, on="customer_ID")
         
+        bar_counter(df[col], figsize=(self.fig_width, self.fig_height))
+        for a in agg_list:
+            bar_counter(agg_df[a], figsize=(self.fig_width, self.fig_height))
+            
+        signal_preview(df=agg_df, cols=agg_list, continuous=False,
+                       width=self.fig_width, row_height=self.fig_height)
+        
         return agg_df
             
-    def profile_column(self,
-                       agg_list: list = None,
-                       hist_q: tuple = (0.005, 0.995)):
+    def profile_column(self):
         
         if self.col_data is None:
             raise Exception("Run load_column() method first!")
@@ -146,14 +220,13 @@ class DataLoader:
         if self.labels is None:
             self.load_labels()
         
+        if not self.active_profiler:
+            self.init_profiler()
+        
         if self.col_name in self.metadata["cats"]:
-            if agg_list is None:
-                agg_list = ["nunique", "first", "last"]
-            return self.categorical_profile(agg_list)
+            return self.categorical_profile(self.default_agg["categorical"])
         else:
-            if agg_list is None:
-                agg_list = ["mean", "min", "max", "last"]
-            return self.continous_profile(agg_list, hist_q)    
+            return self.continous_profile(self.default_agg["continuous"])    
             
         
 if __name__ == "__main__":
