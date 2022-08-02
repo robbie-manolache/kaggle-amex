@@ -25,7 +25,7 @@ def init_metadata():
         },
         "cats": ['B_30', 'B_38', 'D_114', 'D_116', 
                  'D_117', 'D_120', 'D_126', 'D_63', 
-                 'D_64', 'D_66', 'D_68']
+                 'D_64', 'D_66', 'D_68', 'D_87']
     }
     
     return metadata
@@ -117,6 +117,11 @@ class DataLoader:
         self.col_name = col_name
         self.col_data = pq_con.read(columns=index_cols+[col_name])\
             .to_pandas().drop("batch", axis=1).reset_index()
+        
+        if self.col_name in self.metadata["cats"]:    
+            if 0 not in self.col_data[col_name].unique():
+                self.col_data.loc[:, col_name] = \
+                    self.col_data[col_name].fillna(0).astype(int)
     
     def init_profiler(self,
                       default_agg: dict = None,
@@ -217,8 +222,37 @@ class DataLoader:
         if self.col_name in self.metadata["cats"]:
             return self.categorical_profile(self.default_agg["categorical"])
         else:
-            return self.continous_profile(self.default_agg["continuous"])    
+            return self.continous_profile(self.default_agg["continuous"])
+        
+    def quick_profile(self):
+        
+        if self.col_data is None:
+            raise Exception("Run load_column() method first!")    
             
+        if self.col_name in self.metadata["cats"]:
+            
+            return {
+                "all": self.col_data[self.col_name].value_counts().to_dict(),
+                "last": self.col_data.groupby("customer_ID")[self.col_name]\
+                    .last().value_counts().to_dict()
+            }
+            
+        else:
+            
+            summ_all = self.col_data[self.col_name]\
+                .describe().round(4).to_dict()
+            summ_all.update(
+                {"missing": self.col_data.shape[0] - summ_all["count"]}
+            )
+            
+            last = self.col_data.groupby("customer_ID")[self.col_name].last()
+            summ_last = last.describe().round(4).to_dict()
+            summ_last.update(
+                {"missing": last.shape[0] - summ_last["count"]}
+            )
+            
+            return {"all": summ_all, "last": summ_last}     
+        
         
 if __name__ == "__main__":
     

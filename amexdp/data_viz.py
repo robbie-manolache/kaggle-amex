@@ -74,9 +74,9 @@ def signal_preview(df: pd.DataFrame,
         if continuous:
             labels = [f"B{i+1}" for i in range(n_cuts)]
             if cut_type == "quantile":
-                a = pd.qcut(df[a], q=n_cuts, labels=labels)
+                a = pd.qcut(df[a], q=n_cuts, labels=labels, duplicates="drop")
             else:
-                a = pd.cut(df[a], bins=n_cuts, labels=labels)
+                a = pd.cut(df[a], bins=n_cuts, labels=labels, duplicates="drop")
 
         df.groupby(a)["target"].mean().plot(kind="bar", ax=ax)
 
