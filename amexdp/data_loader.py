@@ -105,6 +105,11 @@ class DataLoader:
         
         self.batch_labels = self.labels[self.labels["customer_ID"]\
             .isin(customers)].copy().set_index("customer_ID")
+    
+    def impute_binary_cat(self):
+        if 0 not in self.col_data[self.col_name].unique():
+                self.col_data.loc[:, self.col_name] = \
+                    self.col_data[self.col_name].fillna(0).astype(int)
             
     def load_column(self, 
                     col_name: str, 
@@ -118,10 +123,10 @@ class DataLoader:
         self.col_data = pq_con.read(columns=index_cols+[col_name])\
             .to_pandas().drop("batch", axis=1).reset_index()
         
-        if self.col_name in self.metadata["cats"]:    
-            if 0 not in self.col_data[col_name].unique():
-                self.col_data.loc[:, col_name] = \
-                    self.col_data[col_name].fillna(0).astype(int)
+        if self.col_name in self.metadata["cats"]:
+            if self.col_data[self.col_name].isna().sum() > 0:
+                self.impute_binary_cat()
+            
     
     def init_profiler(self,
                       default_agg: dict = None,

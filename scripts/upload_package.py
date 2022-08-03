@@ -26,7 +26,7 @@ else:
     )
 
 # get package file name
-file_name = "amexdp-0.1.0-py3-none-any.whl"
+file_name = "amexdp-0.1.2-py3-none-any.whl"
 
 # copy source file to destination
 shutil.copy2(os.path.join("dist", file_name), 
@@ -34,5 +34,5 @@ shutil.copy2(os.path.join("dist", file_name),
 
 # upload to Kaggle datasets
 upload_dataset(dst_dir, 
-               new_version=False, 
-               version_notes="initial release")
+               new_version=True, 
+               version_notes="fix bug caused by D_87 bug fix :)")
