@@ -5,6 +5,7 @@
 
 
 import os
+import json
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
@@ -23,7 +24,7 @@ def init_metadata():
             "B": "balance",
             "R": "risk"
         },
-        "cats": ['B_30', 'B_38', 'D_114', 'D_116', 
+        "cats": ['B_30', 'B_31', 'B_38', 'D_114', 'D_116', 
                  'D_117', 'D_120', 'D_126', 'D_63', 
                  'D_64', 'D_66', 'D_68', 'D_87']
     }
@@ -46,15 +47,19 @@ def aggregator(
 class DataLoader:
 
     def __init__(self, 
-                 data_dir: str,
-                 train_dir: str = "train_data",
-                 label_file: str = "train_labels.csv"):
+                 feature_dir: str,
+                 profile_path: str = None,
+                 label_path: str = None):
         
-        self.data_dir = data_dir
-        self.train_path = os.path.join(data_dir, train_dir) 
-        self.label_path = os.path.join(data_dir, label_file) 
-        self.n_batch = len(os.listdir(self.train_path))
+        self.feature_dir = feature_dir
+        self.label_path = label_path
+        self.n_batch = len(os.listdir(self.feature_dir))
         self.metadata = self.gen_metadata()
+        self.feature_profiles = None
+        
+        if profile_path is not None:
+            with open(profile_path, "r") as rf:
+                self.feature_profiles = json.load(rf)
         
         self.labels = None
         self.col_name = None
@@ -73,7 +78,7 @@ class DataLoader:
         
     def gen_metadata(self):
         metadata = init_metadata()
-        pq_con = pq.ParquetDataset(self.train_path)
+        pq_con = pq.ParquetDataset(self.feature_dir)
         columns = pq_con.schema.names
         metadata["features"] = [c for c in columns if 
                                 c not in metadata["keys"]]
@@ -94,7 +99,7 @@ class DataLoader:
         self.sample_batches = batches
         
         pq_filter = ("batch", "in", list(map(str, batches)))
-        pq_con = pq.ParquetDataset(self.train_path, filters=[pq_filter])
+        pq_con = pq.ParquetDataset(self.feature_dir, filters=[pq_filter])
         self.batch_data = pq_con.read().to_pandas().drop("batch", axis=1)
         
         customers = self.batch_data.index\
@@ -118,7 +123,7 @@ class DataLoader:
         if index_cols is None:
             index_cols = self.metadata["keys"]
             
-        pq_con = pq.ParquetDataset(self.train_path)
+        pq_con = pq.ParquetDataset(self.feature_dir)
         self.col_name = col_name
         self.col_data = pq_con.read(columns=index_cols+[col_name])\
             .to_pandas().drop("batch", axis=1).reset_index()

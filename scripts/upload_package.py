@@ -1,3 +1,4 @@
+
 # +-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+
 # Upload amexdp package (*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-
 # +-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+
@@ -26,7 +27,7 @@ else:
     )
 
 # get package file name
-file_name = "amexdp-0.1.2-py3-none-any.whl"
+file_name = "amexdp-0.2.0-py3-none-any.whl"
 
 # copy source file to destination
 shutil.copy2(os.path.join("dist", file_name), 
@@ -35,4 +36,5 @@ shutil.copy2(os.path.join("dist", file_name),
 # upload to Kaggle datasets
 upload_dataset(dst_dir, 
                new_version=True, 
-               version_notes="fix bug caused by D_87 bug fix :)")
+               version_notes=("DataLoader init with different paths for "+
+                              "features, labels and profile metadata"))
