@@ -10,6 +10,13 @@ import pandas as pd
 from amexdp.data_loader import DataLoader
 
 
+def _default_value(x, default):
+    if x is None:
+        return default
+    else:
+        return x
+
+
 def aggregator(
     df: pd.DataFrame,
     agg_spec: str or list or dict,
@@ -38,20 +45,14 @@ class FeatureEngineering(DataLoader):
         
         super().__init__(feature_dir, profile_path, label_path)
 
-        if agg_default is None:
-            self.agg_default = ["last"]
-        else:
-            self.agg_default = agg_default
-        self.agg_custom = agg_custom
+        self.agg_default = _default_value(agg_default, ["last"])
+        self.agg_custom = _default_value(agg_custom, {})
             
         self.impute_default = impute_default
-        self.impute_custom = impute_custom
+        self.impute_custom = _default_value(impute_custom, {})
         
-        if cat_default is None:
-            self.cat_default = ["use_last_cat"]
-        else:
-            self.cat_default = cat_default
-        self.cat_custom = cat_custom   
+        self.cat_default = _default_value(cat_default, ["use_last_cat"])
+        self.cat_custom = _default_value(cat_custom, {})   
 
         self.group_cols = group_cols
         self.agg_df = None
@@ -153,19 +154,34 @@ class FeatureEngineering(DataLoader):
         
     def run_feateng_pipeline(self,
                              cols: list = None,
-                             training: bool = True):
+                             training: bool = True,
+                             progress: str = None):
         
         if cols is None:
             cols = self.metadata["features"]
         
         self.init_agg_frame(add_labels=training)
+        
+        if progress == "tqdm":
+            cols = tqdm(cols)
+        elif progress == "print":
+            i = 0
+        else:
+            pass
            
-        for col in tqdm(cols):
+        for col in cols:
+            
             if col in self.metadata["continuous"]:
                 self.gen_continuous_feature(col)
             elif col in self.metadata["cats"]:
                 self.gen_categorical_feature(col)
             else:
                 raise Exception(f"Feature {col} not in metadata!") 
-            _ = gc.collect()        
+            
+            if progress == "print":
+                print("Feature %s engineered (%d of %d)" % 
+                      (col, i+1, len(cols)))
+                i += 1
+            
+            _ = gc.collect()               
         
