@@ -4,6 +4,8 @@
 # +-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+(*)+-|.|-+
 
 
+import gc
+from tqdm import tqdm
 import pandas as pd
 from amexdp.data_loader import DataLoader
 
@@ -88,7 +90,7 @@ class FeatureEngineering(DataLoader):
     def ohe_mean(self, df: pd.DataFrame, cat: str, append: bool = False):
         
         ohe_df = pd.get_dummies(self.col_data.set_index(self.group_cols)[cat]).\
-            groupby(self.group_cols).mean().add_prefix(f"{cat}_")
+            groupby(self.group_cols).mean().add_prefix(f"{cat}_OHE_")
         
         if append:
             self.agg_df = pd.concat([self.agg_df, ohe_df], axis=1)
@@ -149,5 +151,21 @@ class FeatureEngineering(DataLoader):
                 cat_df.append(getattr(self, cp)(df=self.col_data, cat=col))
             return pd.concat(cat_df)
         
-    
+    def run_feateng_pipeline(self,
+                             cols: list = None,
+                             training: bool = True):
+        
+        if cols is None:
+            cols = self.metadata["features"]
+        
+        self.init_agg_frame(add_labels=training)
+           
+        for col in tqdm(cols):
+            if col in self.metadata["continuous"]:
+                self.gen_continuous_feature(col)
+            elif col in self.metadata["cats"]:
+                self.gen_categorical_feature(col)
+            else:
+                raise Exception(f"Feature {col} not in metadata!") 
+            _ = gc.collect()        
         
