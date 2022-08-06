@@ -9,8 +9,6 @@ import json
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-import matplotlib.pyplot as plt
-from amexdp.data_viz import bar_counter, signal_preview, auto_subplots
 
 
 def init_metadata():
@@ -26,22 +24,21 @@ def init_metadata():
         },
         "cats": ['B_30', 'B_31', 'B_38', 'D_114', 'D_116', 
                  'D_117', 'D_120', 'D_126', 'D_63', 
-                 'D_64', 'D_66', 'D_68', 'D_87']
+                 'D_64', 'D_66', 'D_68', 'D_87'],
+        "cat_maps": {
+            "all": {"D_64": {"-1": "NA"},
+                    "D_66": {0: -9},
+                    "D_68": {0: -9}},
+            "last": {"D_126": {-1: 0, -9: 0}}
+        },
+        "missing": {
+            "test": ["B_37", "B_40", "B_41", "D_86",
+                     "S_12", "S_17", "S_26"],
+            "train": ["R_7", "R_12", "R_14", "R_20"]
+        }
     }
     
     return metadata
-
-
-def aggregator(
-    df: pd.DataFrame,
-    agg_spec: str or list or dict,
-    agg_cols: str or list = None,
-    group_cols: str or list = "customer_ID"
-):
-    if agg_cols is None:
-        return df.groupby(group_cols).agg(agg_spec)
-    else:
-        return df.groupby(group_cols)[agg_cols].agg(agg_spec)
     
 
 class DataLoader:
@@ -68,20 +65,14 @@ class DataLoader:
         self.batch_data = None
         self.batch_labels = None
         
-        self.active_profiler = False
-        self.default_agg = None
-        self.hist_q = None
-        self.n_cuts = None
-        self.fig_width = None
-        self.fig_height = None
-        self.auto_subplots = True
-        
     def gen_metadata(self):
         metadata = init_metadata()
         pq_con = pq.ParquetDataset(self.feature_dir)
         columns = pq_con.schema.names
         metadata["features"] = [c for c in columns if 
                                 c not in metadata["keys"]]
+        metadata["continuous"] = [c for c in metadata["features"]
+                                  if c not in metadata["cats"]]
         metadata["col_groups"] = {
             v: [c for c in metadata["features"] if c.startswith(k)]
             for k, v in metadata["col_types"].items()
@@ -130,138 +121,16 @@ class DataLoader:
         
         if self.col_name in self.metadata["cats"]:
             if self.col_data[self.col_name].isna().sum() > 0:
-                self.impute_binary_cat()
+                self.impute_binary_cat()  
+                
+    def load_index(self, index_cols: list = None):
+        
+        if index_cols is None:
+            index_cols = self.metadata["keys"]
             
-    
-    def init_profiler(self,
-                      default_agg: dict = None,
-                      hist_q: tuple = (0.005, 0.995),
-                      n_cuts: int = 7,
-                      figure_dims: tuple = (12, 3),
-                      auto_subplots: bool = True):
-        
-        if default_agg is None:
-            default_agg = {
-                "continuous": ["mean", "min", "max", "last"],
-                "categorical": ["nunique", "first", "last"]
-            }
-            
-        self.active_profiler = True
-        self.default_agg = default_agg
-        self.hist_q = hist_q
-        self.n_cuts = n_cuts
-        self.fig_width, self.fig_height = figure_dims
-        self.auto_subplots = auto_subplots
-    
-    def continous_profile(self, agg_list: list):
-        
-        col = self.col_name
-        col_na = f"{col}_NA"
-        df = self.col_data.copy()
-        
-        df.loc[:, col_na] = df[col].isna()
-        agg_df = aggregator(df, agg_spec={col: agg_list, col_na: "mean"})
-        agg_df.columns = agg_list + [col_na]
-        agg_df = self.labels.join(agg_df, on="customer_ID")
-        
-        fig, ax = plt.subplots(1, 2, figsize=(self.fig_width, self.fig_height))
-        
-        df[col][(df[col] > df[col].quantile(self.hist_q[0])) & 
-                (df[col] < df[col].quantile(self.hist_q[1]))].hist(ax=ax[0])
-        ax[0].set_xlabel(col)
-        
-        agg_df.groupby(agg_df[col_na]>0)["target"].mean()\
-            .plot(kind="barh", ax=ax[1])
-        ax[1].set_title("Missing {} of {} ({}%)".format(
-            agg_df[col_na].sum().round(), agg_df.shape[0],
-            (agg_df[col_na].sum()/agg_df.shape[0]).round(4)*100
-        ))
-        ax[1].set_xlabel("default rate")
-        plt.show()
-        
-        signal_preview(df=agg_df, cols=agg_list, continuous=True, 
-                       cut_type="range", n_cuts=self.n_cuts,
-                       width=self.fig_width, row_height=self.fig_height)
-        
-        signal_preview(df=agg_df, cols=agg_list, continuous=True, 
-                       cut_type="quantile", n_cuts=self.n_cuts,
-                       width=self.fig_width, row_height=self.fig_height)
-        
-        return agg_df
-        
-    def categorical_profile(self, agg_list: list):
-        
-        col = self.col_name
-        df = self.col_data.copy()
-        
-        df.loc[:, col] = df[col].astype("category")
-        agg_df = aggregator(df, agg_spec=agg_list, agg_cols=col)
-        agg_df = self.labels.join(agg_df, on="customer_ID")
-        
-        if self.auto_subplots:
-            ax_list = auto_subplots(n_plots=len(agg_list)+1,
-                                    row_dims=(self.fig_width, self.fig_height))
-        else:
-            ax_list = [None]*(len(agg_list)+1)
-        
-        figsize = (self.fig_width, self.fig_height)
-        
-        bar_counter(df[col], figsize=figsize, ax=ax_list[0])
-        for i, a in enumerate(agg_list):
-            bar_counter(agg_df[a], figsize=figsize, ax=ax_list[i+1])
-            
-        if self.auto_subplots:
-            plt.show()
-            
-        signal_preview(df=agg_df, cols=agg_list, continuous=False,
-                       width=self.fig_width, row_height=self.fig_height)
-        
-        return agg_df
-            
-    def profile_column(self):
-        
-        if self.col_data is None:
-            raise Exception("Run load_column() method first!")
-        
-        if self.labels is None:
-            self.load_labels()
-        
-        if not self.active_profiler:
-            self.init_profiler()
-        
-        if self.col_name in self.metadata["cats"]:
-            return self.categorical_profile(self.default_agg["categorical"])
-        else:
-            return self.continous_profile(self.default_agg["continuous"])
-        
-    def quick_profile(self):
-        
-        if self.col_data is None:
-            raise Exception("Run load_column() method first!")    
-            
-        if self.col_name in self.metadata["cats"]:
-            
-            return {
-                "all": self.col_data[self.col_name].value_counts().to_dict(),
-                "last": self.col_data.groupby("customer_ID")[self.col_name]\
-                    .last().value_counts().to_dict()
-            }
-            
-        else:
-            
-            summ_all = self.col_data[self.col_name]\
-                .describe().round(4).to_dict()
-            summ_all.update(
-                {"missing": self.col_data.shape[0] - summ_all["count"]}
-            )
-            
-            last = self.col_data.groupby("customer_ID")[self.col_name].last()
-            summ_last = last.describe().round(4).to_dict()
-            summ_last.update(
-                {"missing": last.shape[0] - summ_last["count"]}
-            )
-            
-            return {"all": summ_all, "last": summ_last}     
+        pq_con = pq.ParquetDataset(self.feature_dir)
+        return pq_con.read(columns=index_cols)\
+            .to_pandas().drop("batch", axis=1).reset_index()
         
         
 if __name__ == "__main__":

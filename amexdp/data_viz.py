@@ -67,9 +67,14 @@ def signal_preview(df: pd.DataFrame,
 
     r, c = plot_dims
     fig, axes = plt.subplots(r, c, figsize=(width*0.8, row_height*r))
+    
+    if r*c > 1:
+        ax_list = axes.flatten()[:len(cols)]
+    else:
+        ax_list = [axes]
 
     i = 0
-    for a, ax in zip(cols, axes.flatten()[:len(cols)]):
+    for a, ax in zip(cols, ax_list):
 
         if continuous:
             labels = [f"B{i+1}" for i in range(n_cuts)]

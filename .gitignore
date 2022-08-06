@@ -153,5 +153,8 @@ dev_*.ipynb
 test_*.ipynb
 notes.md
 
+# misc
+misc/
+
 # Local file sync
 sync.py
